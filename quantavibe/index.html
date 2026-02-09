@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuantaVibe - Quantum Circuit Designer</title>
+    <link rel="icon" type="image/x-icon" href="qvicon.ico">
+    <!-- PWA Support -->
+    <!-- PWA Support (Disabled to prevent local CORS errors) -->
+    <!-- <link rel="manifest" href="manifest.json"> -->
+    <meta name="theme-color" content="#22d3ee">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="QuantaVibe">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css?v=2">
+    <script>
+        window.onerror = function (msg, url, line, col, error) {
+            // Ignore benign resize errors or opaque script errors
+            if (msg.toLowerCase().includes('script error')) {
+                console.warn("Ignored Cross-Origin Script Error");
+                return false;
+            }
+
+            const errorMsg = `Global Error: ${msg}\nLine: ${line}`;
+            console.error(errorMsg);
+
+            // Show toast if showToast is available, else alert for visibility
+            if (window.showToast) {
+                window.showToast(errorMsg, "error");
+            } else {
+                console.warn("Opaque Script Error detected. Check CORS or syntax in external files.");
+                // Try to be helpful
+                const debugDiv = document.createElement('div');
+                debugDiv.style.position = 'fixed';
+                debugDiv.style.top = '0';
+                debugDiv.style.left = '0';
+                debugDiv.style.background = 'red';
+                debugDiv.style.color = 'white';
+                debugDiv.style.padding = '5px';
+                debugDiv.style.zIndex = '9999';
+                debugDiv.innerText = "Script Error detected. Open Console (F12) for details.";
+                document.body.appendChild(debugDiv);
+                setTimeout(() => debugDiv.remove(), 5000);
+            }
+        }
+
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" crossorigin="anonymous" defer></script>
+    <!-- Three.js Removed for Paper-Trail Pivot -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"
+        defer></script>
+    <!-- Core Infrastructure -->
+    <script src="js/GeminiClient.js" defer></script>
+    <script src="js/OracleConnector.js" defer></script>
+    <script src="js/ChronicleManager.js" defer></script>
+    <script src="js/SentinelCore.js" defer></script>
+    <script src="js/PluginTemplates.js" defer></script>
+    <script src="js/PluginWorkshop.js" defer></script>
+    <!-- <script src="js/P2PBridge.js"></script> -->
+    <!-- Feature Loaders -->
+    <script src="js/FeatureLoader.js?v=2" defer></script>
+    <script src="features/FileSystemManager.js?v=2" defer></script>
+
+    <!-- Hardware Designer loaded via FeatureLoader autoload (not direct script) -->
+    <!-- gate_cost_calculator loaded at bottom of page -->
+
+    <style>
+        /* Custom scrollbar for futuristic feel */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+            border-radius: 4px;
+        }
+
+        canvas {
+            background-color: #0f172a;
+            /* Slate-900 */
+            background-image: radial-gradient(#1e293b 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #webcamModal {
+            backdrop-filter: blur(10px);
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #22d3ee;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #475569;
+            border-radius: 2px;
+        }
+
+        /* Toast Animation */
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
+        }
+
+        .toast {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+
+        .toast.hiding {
+            animation: fadeOut 0.3s ease-in forwards;
+        }
+    </style>
+    <style>
+        /* Aegis Quadrant Layout */
+        .quadrant-grid {
+            display: grid;
+            grid-template-columns: 80px 1fr 480px;
+            grid-template-rows: auto 1fr;
+            /* Header, Main */
+            grid-template-areas:
+                "header header header"
+                "sidebar-left main-canvas sidebar-right"
+                "timeline timeline timeline";
+        }
+
+        .area-timeline {
+            grid-area: timeline;
+            background: rgba(15, 23, 42, 0.95);
+            border-top: 1px solid rgba(56, 189, 248, 0.2);
+            backdrop-filter: blur(8px);
+        }
+
+        .area-header {
+            grid-area: header;
+        }
+
+        .area-left {
+            grid-area: sidebar-left;
+        }
+
+        .area-main {
+            grid-area: main-canvas;
+        }
+
+        .area-right {
+            grid-area: sidebar-right;
+            background: linear-gradient(to bottom, #0f172a, #1e293b);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-left: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        .glow-divider {
+            border-bottom: 1px solid var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+            position: relative;
+        }
+
+        .glow-divider::after {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, white, transparent);
+            opacity: 0.5;
+        }
+
+        .area-dock {
+            grid-area: bottom-dock;
+        }
+
+        .aegis-glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Z-Axis 3D Effect */
+        /* Z-Axis 3D Effect Removed */
+
+        .area-main {
+            perspective: 1500px;
+            overflow: hidden;
+            /* Ensure 3D element doesn't break layout */
+        }
+
+        #circuitCanvas {
+            transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.8s ease;
+        }
+
+        /* Dropdown Menu */
+        .dropdown-menu {
+            transform-origin: top right;
+            transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+            transform: scale(0.95);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .dropdown-menu.open {
+            transform: scale(1);
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+
+</head>
+
+<body class="bg-gray-950 text-white h-screen quadrant-grid font-sans overflow-hidden grid-rows-[auto_1fr_auto]">
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-20 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    <!-- Export Modal -->
+    <div id="exportModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-3/4 h-3/4 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3
+                    class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                    Export to Hardware </h3><button onclick="closeExportModal()"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Left: Code -->
+                <div class="w-2/3 p-4 bg-gray-950 overflow-auto border-r border-gray-700">
+                    <h4 class="text-sm font-bold text-gray-500 mb-2">OpenQASM 3.0</h4>
+                    <pre id="qasmOutput" class="font-mono text-xs text-green-400 whitespace-pre-wrap"></pre>
+                </div>
+                <!-- Right: Log -->
+                <div class="w-1/3 p-4 bg-gray-900 overflow-auto">
+                    <h4 class="text-sm font-bold text-gray-500 mb-2">Optimization Log</h4>
+                    <div id="optimizationLog" class="text-sm text-gray-300 space-y-2"></div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-3"><button
+                    onclick="optimizeQASMWithAI()"
+                    class="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded text-white font-bold shadow-[0_0_10px_rgba(168,85,247,0.4)]">Optimize
+                    with AI</button><button onclick="copyQASM()"
+                    class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white">Copy
+                    QASM</button><button onclick="closeExportModal()"
+                    class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-white font-bold">Done</button>
+            </div>
+        </div>
+    </div>
+    <!-- Q# Export Modal (Separate from QASM) -->
+    <div id="qsharpExportModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-3/4 h-3/4 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-500">
+                    Export to Q# </h3><button
+                    onclick="document.getElementById('qsharpExportModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="flex-1 flex overflow-hidden">
+                <div class="w-full p-4 bg-gray-950 overflow-auto">
+                    <h4 class="text-sm font-bold text-gray-500 mb-2">Q# Code</h4>
+                    <pre id="qsharpOutput" class="font-mono text-xs text-teal-400 whitespace-pre-wrap"></pre>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-3"><button
+                    onclick="navigator.clipboard.writeText(document.getElementById('qsharpOutput').innerText);window.showToast('Q# Copied!','success')"
+                    class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white">Copy
+                    Q#</button><button onclick="document.getElementById('qsharpExportModal').classList.add('hidden')"
+                    class="bg-teal-600 hover:bg-teal-500 px-4 py-2 rounded text-white font-bold">Done</button>
+            </div>
+        </div>
+    </div>
+    <!-- Code Export Preview Modal -->
+    <div id="codePreviewModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-3/4 h-3/4 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 id="codePreviewTitle"
+                    class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500">
+                    Code Export
+                </h3>
+                <button onclick="document.getElementById('codePreviewModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <!-- Loading State -->
+            <div id="codePreviewLoading" class="flex-1 flex items-center justify-center flex-col gap-4">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-green-400"></div>
+                <span class="text-gray-400 text-sm font-mono">Gemini is generating code...</span>
+            </div>
+            <!-- Code Content (hidden until ready) -->
+            <div id="codePreviewContent" class="flex-1 hidden overflow-auto p-4 bg-gray-950">
+                <pre id="codePreviewOutput"
+                    class="font-mono text-xs text-green-400 whitespace-pre-wrap leading-relaxed"></pre>
+            </div>
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-3">
+                <button
+                    onclick="navigator.clipboard.writeText(document.getElementById('codePreviewOutput').innerText);window.showToast('Code Copied!','success')"
+                    class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white transition">
+                    Copy Code
+                </button>
+                <button onclick="document.getElementById('codePreviewModal').classList.add('hidden')"
+                    class="bg-green-600 hover:bg-green-500 px-4 py-2 rounded text-white font-bold transition">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Modal -->
+    <div id="connectionModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white">Cloud Connections</h3><button onclick="closeConnectionModal()"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-4 space-y-4">
+                <div><label class="block text-xs font-bold text-gray-400 mb-1">Provider</label><select id="connProvider"
+                        class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm"
+                        onchange="renderConnectionFields()">
+                        <option value="IBM Quantum">IBM Quantum</option>
+                        <option value="Google Quantum AI">Google Quantum AI</option>
+                        <option value="AWS Braket">AWS Braket</option>
+                        <option value="Rigetti">Rigetti</option>
+                    </select></div>
+                <div id="connFields" class="space-y-3">
+                    <!-- Dynamic Fields -->
+                </div>
+                <div id="connStatus" class="text-center text-sm min-h-[20px]"></div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-2"><button
+                    onclick="testConnection()"
+                    class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-white text-sm">Test</button><button
+                    onclick="saveConnection()"
+                    class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-white text-sm font-bold">Save</button>
+            </div>
+        </div>
+    </div>
+    <!-- Scaffold Modal -->
+    <div id="scaffoldModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white">Scaffold Hybrid App</h3><button onclick="closeScaffoldModal()"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-sm text-gray-400">Create a standalone Python/FastAPI application for your
+                    current quantum circuit.</p>
+                <div><label class="block text-xs font-bold text-gray-400 mb-1">App Name</label><input type="text"
+                        id="appName" placeholder="my_quantum_service"
+                        class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-blue-500 outline-none">
+                </div>
+                <div id="scaffoldStatus" class="text-center text-sm min-h-[20px]"></div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-2"><button
+                    onclick="createScaffolding()"
+                    class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-white text-sm font-bold w-full">Create
+                    App</button></div>
+        </div>
+    </div>
+    <!-- Resource Estimator Modal -->
+    <div id="resourceModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-blue-400">📊</span> The Budgeteer
+                </h3><button onclick="document.getElementById('resourceModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-6 space-y-4" id="resourceContent">
+                <div class="animate-pulse text-center text-gray-400">Calculating Cost...</div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end">
+                <button onclick="document.getElementById('resourceModal').classList.add('hidden')"
+                    class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white text-sm">Close</button>
+            </div>
+        </div>
+    </div>
+    <!-- Hardware Mirror Modal -->
+    <div id="hardwareMirrorModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-yellow-400">🌊</span> Hardware Mirror
+                </h3><button onclick="document.getElementById('hardwareMirrorModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-4 space-y-2">
+                <p class="text-xs text-gray-400 mb-2">Select a Digital Twin to mirror real hardware noise
+                    characteristics.</p>
+                <button onclick="selectProfile('willow')"
+                    class="w-full text-left p-3 hover:bg-gray-700 rounded border border-gray-700 hover:border-blue-500 transition group">
+                    <div class="font-bold text-white">Google Willow</div>
+                    <div class="text-[10px] text-gray-500 group-hover:text-blue-300">72 Qubits • High Fidelity (99.76%)
+                        • Grid</div>
+                </button>
+                <button onclick="selectProfile('heron')"
+                    class="w-full text-left p-3 hover:bg-gray-700 rounded border border-gray-700 hover:border-purple-500 transition group">
+                    <div class="font-bold text-white">IBM Heron R2</div>
+                    <div class="text-[10px] text-gray-500 group-hover:text-purple-300">133 Qubits • Tunable Couplers •
+                        Heavy-Hex</div>
+                </button>
+                <button onclick="selectProfile('ankaa')"
+                    class="w-full text-left p-3 hover:bg-gray-700 rounded border border-gray-700 hover:border-cyan-500 transition group">
+                    <div class="font-bold text-white">Rigetti Ankaa-2</div>
+                    <div class="text-[10px] text-gray-500 group-hover:text-cyan-300">80 Qubits • Octagonal • Moderate
+                        Noise</div>
+                </button>
+                <button onclick="selectProfile('forte')"
+                    class="w-full text-left p-3 hover:bg-gray-700 rounded border border-gray-700 hover:border-green-500 transition group">
+                    <div class="font-bold text-white">IonQ Forte</div>
+                    <div class="text-[10px] text-gray-500 group-hover:text-green-300">32 Qubits • All-to-All • High
+                        Fidelity</div>
+                </button>
+                <button onclick="selectProfile(null)"
+                    class="w-full text-left p-3 hover:bg-gray-700 rounded border border-gray-700 hover:border-green-500 transition group">
+                    <div class="font-bold text-white">Ideal Simulator</div>
+                    <div class="text-[10px] text-gray-500 group-hover:text-green-300">No Noise • Perfect State</div>
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- Custom Noise Modal -->
+    <div id="customNoiseModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-orange-400">🎛️</span> Noise Builder
+                </h3><button onclick="document.getElementById('customNoiseModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>T1 (Relaxation)</span><span id="t1Val" class="text-cyan-400">50 µs</span>
+                    </div>
+                    <input type="range" min="1" max="200" value="50" class="w-full" oninput="updateCustomNoiseDisplay()"
+                        id="customT1">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>T2 (Dephasing)</span><span id="t2Val" class="text-cyan-400">70 µs</span>
+                    </div>
+                    <input type="range" min="1" max="200" value="70" class="w-full" oninput="updateCustomNoiseDisplay()"
+                        id="customT2">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>Gate Error (1q)</span><span id="e1Val" class="text-red-400">0.1%</span>
+                    </div>
+                    <input type="range" min="0" max="50" step="1" value="1" class="w-full"
+                        oninput="updateCustomNoiseDisplay()" id="customE1">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>Gate Error (2q)</span><span id="e2Val" class="text-red-400">1.0%</span>
+                    </div>
+                    <input type="range" min="0" max="100" step="1" value="10" class="w-full"
+                        oninput="updateCustomNoiseDisplay()" id="customE2">
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end">
+                <button onclick="applyCustomNoise()"
+                    class="bg-orange-600 hover:bg-orange-500 px-4 py-2 rounded text-white text-sm font-bold shadow-lg shadow-orange-900/50">Apply
+                    Profile</button>
+            </div>
+        </div>
+    </div>
+    <!-- PDF Report Modal -->
+    <div id="pdfReportModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-[500px] flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-red-400">📄</span> Generate Research Report
+                </h3><button onclick="document.getElementById('pdfReportModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1">Research Title</label>
+                    <input type="text" id="pdfTitle" placeholder="Quantum Circuit Analysis"
+                        value="Quantum Circuit Research Report"
+                        class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-red-500 outline-none">
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Researcher</label>
+                        <input type="text" id="pdfResearcher" placeholder="Dr. Quantum" value="Researcher"
+                            class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-red-500 outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Organization</label>
+                        <input type="text" id="pdfOrg" placeholder="Quantum Lab" value="QuantaVibe Labs"
+                            class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-red-500 outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1">Additional Notes</label>
+                    <textarea id="pdfNotes" rows="3" placeholder="Enter findings, hypotheses, or external references..."
+                        class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-red-500 outline-none resize-none"></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-2">
+                <button onclick="document.getElementById('pdfReportModal').classList.add('hidden')"
+                    class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white text-sm">Cancel</button>
+                <button onclick="submitPDFReport()"
+                    class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded text-white text-sm font-bold shadow-lg shadow-red-900/50">Generate
+                    PDF</button>
+            </div>
+        </div>
+    </div>
+    <!-- Custom Gateway Modal -->
+    <div id="customGatewayModal"
+        class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg shadow-2xl w-96 flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="text-purple-400">&#x1F9E0;</span> Custom Gateway
+                </h3><button onclick="document.getElementById('customGatewayModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white">&times;
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="flex items-center gap-2 mb-4">
+                    <input type="checkbox" id="connectQuantumSystem"
+                        class="w-4 h-4 text-purple-600 rounded bg-gray-700 border-gray-600 focus:ring-purple-500"
+                        onchange="toggleGatewayFields()">
+                    <label for="connectQuantumSystem" class="text-sm font-bold text-gray-300 select-none">Connect to
+                        quantum system?</label>
+                </div>
+
+                <div id="gatewayFields"
+                    class="space-y-3 opacity-50 pointer-events-none transition-opacity duration-300">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Gateway Name</label>
+                        <input type="text" id="gatewayName" placeholder="My Private Cluster"
+                            class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-purple-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Endpoint URL</label>
+                        <input type="text" id="gatewayUrl" placeholder="https://api.myquantum.com/v1"
+                            class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-purple-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">API Token</label>
+                        <input type="password" id="gatewayToken" placeholder="••••••••"
+                            class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white text-sm focus:border-purple-500 outline-none">
+                    </div>
+                </div>
+
+                <div id="gatewayStatus" class="text-center text-sm min-h-[20px] text-gray-400"></div>
+
+                <!-- Sentinel Architect Edit -->
+                <div class="border-t border-gray-700 pt-3 mt-2">
+                    <label class="block text-xs font-bold text-purple-400 mb-1 flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Edit with Sentinel Architect
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="text" id="gatewayAIPrompt" placeholder="e.g. IBM Quantum backend at my lab..."
+                            class="flex-1 bg-gray-900 border border-purple-500/30 rounded p-2 text-white text-xs focus:border-purple-500 outline-none placeholder-gray-600">
+                        <button onclick="configureGatewayWithAI()" id="gatewayAIBtn"
+                            class="bg-purple-600/80 hover:bg-purple-500 px-3 py-1.5 rounded text-white text-xs font-bold transition whitespace-nowrap">
+                            Configure
+                        </button>
+                    </div>
+                    <p class="text-[9px] text-gray-600 mt-1">Describe your quantum backend and Sentinel will suggest
+                        configuration</p>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-900 flex justify-end gap-2">
+                <button onclick="testGatewayConnection()"
+                    class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-white text-sm transition">Test</button>
+                <button onclick="saveCustomGateway()"
+                    class="bg-purple-600 hover:bg-purple-500 px-3 py-1.5 rounded text-white text-sm font-bold shadow-lg shadow-purple-900/50 transition">Save
+                    Gateway</button>
+            </div>
+        </div>
+    </div>
+    <!-- Header -->
+    <header
+        class="area-header glass-panel border-b border-gray-700/50 p-3 flex justify-between items-center z-50 relative">
+        <div class="flex items-center gap-4">
+            <!-- Logo -->
+            <div class="flex items-center gap-2">
+                <div
+                    class="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 shadow-[0_0_15px_rgba(34,211,238,0.6)] flex items-center justify-center relative">
+                    <div class="absolute inset-0 rounded-full bg-cyan-400 opacity-20 animate-ping"></div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white animate-spin-slow"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" stroke-dasharray="2 4" />
+                        <path d="M12 2a10 10 0 1 0 10 10" stroke-dasharray="10 20" />
+                    </svg>
+                </div>
+                <h1
+                    class="text-2xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-blue-400 to-purple-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]">
+                    QUANTA<span class="font-light text-white">VIBE</span>
+                </h1>
+            </div>
+
+            <!-- Project Dropdown Removed per user request -->
+
+            <!-- Export Menu -->
+            <div class="relative group ml-4">
+                <button
+                    class="flex items-center gap-2 text-sm font-mono text-green-300 bg-gray-900/50 px-3 py-1.5 rounded-lg border border-green-500/30 hover:bg-gray-800 transition">
+                    Export
+                    <svg class="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+                <!-- Dropdown -->
+                <div class="absolute top-full left-0 pt-2 w-48 hidden group-hover:block z-50">
+                    <div class="bg-gray-900 border border-green-500/30 rounded-lg shadow-xl overflow-hidden">
+                        <button onclick="exportCircuit('qiskit')"
+                            class="w-full text-left px-4 py-2 text-xs text-white hover:bg-green-900/20 hover:text-green-300 transition block">
+                            Copy Qiskit (Python)
+                        </button>
+                        <button onclick="exportCircuit('cirq')"
+                            class="w-full text-left px-4 py-2 text-xs text-white hover:bg-green-900/20 hover:text-green-300 transition block">
+                            Copy Cirq (Python)
+                        </button>
+                        <div class="border-t border-gray-700 my-1"></div>
+                        <button onclick="exportCircuit('qasm')"
+                            class="w-full text-left px-4 py-2 text-xs text-white hover:bg-green-900/20 hover:text-green-300 transition block">
+                            Copy OpenQASM 3.0
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Hardware Menu -->
+            <div class="relative group ml-4">
+                <button id="customHardwareBtn"
+                    class="flex items-center gap-2 text-sm font-mono text-purple-300 bg-gray-900/50 px-3 py-1.5 rounded-lg border border-purple-500/30 hover:bg-gray-800 transition">
+                    Custom Hardware
+                    <svg class="w-3 h-3 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+                <!-- Dropdown (Hidden) -->
+                <div id="customHardwareDropdown"
+                    class="absolute top-full left-0 mt-2 w-56 bg-gray-900 border border-purple-500/30 rounded-lg shadow-xl overflow-hidden hidden dropdown-menu z-50">
+                    <div id="customHardwareList" class="max-h-48 overflow-y-auto">
+                        <!-- Items injected here -->
+                        <div class="px-4 py-2 text-xs text-gray-500 italic">No custom circuits found.</div>
+                    </div>
+                    <div class="border-t border-gray-700">
+                        <button onclick="openCustomGatewayModal()"
+                            class="w-full text-left px-4 py-2 text-xs font-bold text-purple-300 hover:bg-purple-900/20 hover:text-white transition flex items-center gap-2">
+                            <span class="text-lg leading-none">+</span> Create Custom Gateway
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Button (Moved from Sidebar) -->
+        <button id="headerScanBtn" onclick="document.getElementById('scanBtn').click()"
+            class="ml-4 flex items-center gap-2 text-sm font-mono text-cyan-300 bg-cyan-900/30 px-3 py-1.5 rounded-lg border border-cyan-500/30 hover:bg-cyan-800 transition shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+            </svg>
+            SCAN
+        </button>
+
+        <!-- Right Header Controls -->
+        <div class="flex items-center gap-4">
+            <!-- Decoherence Slider (Restored) -->
+            <div class="flex items-center gap-2 bg-gray-900/50 px-3 py-1.5 rounded-lg border border-gray-700">
+                <span class="text-[10px] text-gray-400 font-mono uppercase">Decoherence</span>
+                <input type="range" id="headerNoiseSlider" min="0" max="100" value="0"
+                    class="w-20 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                <span id="headerNoiseValue" class="text-[10px] font-bold text-cyan-300 w-6 text-right">0%</span>
+            </div>
+
+            <!-- Digital Twin Button (New) -->
+            <button onclick="triggerHardwareMirror()"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-900/30 border border-indigo-700 hover:border-indigo-400 transition group"
+                title="Digital Twin Simulator">
+                <span class="text-xs">🌊</span>
+                <span class="text-xs font-mono text-indigo-300 group-hover:text-indigo-100">TWIN</span>
+            </button>
+
+            <!-- Connection Status -->
+            <button onclick="openConnectionModal()"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900/50 border border-gray-700 hover:border-cyan-500/50 transition group">
+                <div class="w-1.5 h-1.5 rounded-full bg-gray-500 group-hover:bg-cyan-400 transition"></div>
+                <span id="connectBtnText"
+                    class="text-xs font-mono text-gray-400 group-hover:text-cyan-300">DISCONNECTED</span>
+            </button>
+
+            <!-- User Profile / AI Toggle -->
+            <button onclick="toggleSentinelPanel()"
+                class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 p-[1px] cursor-pointer hover:shadow-[0_0_15px_rgba(168,85,247,0.5)] transition relative group">
+                <div class="w-full h-full rounded-full bg-gray-900 flex items-center justify-center">
+                    <span class="font-bold text-xs text-purple-300">AI</span>
+                </div>
+                <!-- Status Indicator -->
+                <div id="ai-btn-dot"
+                    class="absolute -bottom-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-gray-900 shadow-md">
+                </div>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <!-- Note: Bottom Dock Removed -->
+
+    <!-- Sentinel Architect Floating Panel -->
+    <div id="sentinelPanel"
+        class="hidden fixed top-20 right-4 w-96 h-[600px] bg-gray-900/95 border border-purple-500/30 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] flex flex-col z-[100] backdrop-blur-xl transition-all origin-top-right">
+        <!-- Header -->
+        <div
+            class="p-3 border-b border-gray-700/50 bg-gray-800/50 flex justify-between items-center rounded-t-xl cursor-move handle">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <span class="text-purple-400 text-lg">🤖</span>
+                <span class="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-cyan-400">Sentinel
+                    Architect</span>
+            </h3>
+            <div class="flex items-center gap-2">
+
+                <button onclick="toggleSentinelPanel()"
+                    class="text-gray-400 hover:text-white transition hover:bg-white/10 rounded p-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chat Output -->
+        <div class="flex-1 p-4 overflow-y-auto space-y-3 font-mono text-xs custom-scrollbar" id="persistentChatHistory">
+            <div id="initial-agent-msg"
+                class="flex gap-2 text-xs bg-purple-900/20 p-2 rounded border border-purple-500/20">
+                <span class="text-purple-400 font-bold">[SYSTEM]</span>
+                <span class="text-gray-300">Sentinel Architect initialized. Accessing Quantum tools... Ready.</span>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 bg-gray-800/50 border-t border-gray-700/50 rounded-b-xl">
+            <div class="flex gap-2">
+                <input type="text" id="persistentChatInput" placeholder="Command (e.g., 'Optimize circuit')..."
+                    class="flex-1 bg-gray-950 border border-gray-700 rounded-lg p-2 text-xs text-white focus:border-purple-500 outline-none shadow-inner font-mono">
+                <button id="persistentSendBtn"
+                    class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-lg font-bold text-xs shadow-lg shadow-purple-900/40 transition">EXE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar & Main Canvas (Grid Flow) -->
+    <aside
+        class="area-left glass-panel border-r border-gray-700/50 flex flex-col items-center py-6 gap-4 z-40 relative w-[80px]">
+        <!-- Sidebar content preserved in logic flow as visual sibling, though grid layout handles positioning -->
+        <!-- Circuit -->
+        <div onclick="toggleDrawer()" class="sidebar-icon-container active group">
+            <div class="sidebar-icon-box">
+                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Circuit</span>
+        </div>
+
+        <!-- Q# Export -->
+        <div id="navQSharpBtn" class="sidebar-icon-container group">
+            <!-- ... (Rest of sidebar remains loaded via subsequent lines) ... -->
+            <div class="sidebar-icon-box border-teal-500/30">
+                <span class="text-xs font-bold text-teal-400 font-mono">Q#</span>
+            </div>
+            <span class="sidebar-label">Export</span>
+        </div>
+
+        <!-- Resource Estimator -->
+        <div onclick="triggerResourceEstimator()" class="sidebar-icon-container group" title="Resource Estimator">
+            <div class="sidebar-icon-box border-green-500/30">
+                <svg class="w-5 h-5 text-green-400 group-hover:text-green-200" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                    </path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Budget</span>
+        </div>
+
+        <!-- PDF Report (Restored) -->
+        <div onclick="generatePDFReport()" class="sidebar-icon-container group" title="PDF Report">
+            <div class="sidebar-icon-box border-red-500/30">
+                <svg class="w-5 h-5 text-red-400 group-hover:text-red-200" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                    </path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Report</span>
+        </div>
+
+        <!-- Noise Profiler -->
+        <div onclick="triggerNoiseProfile()" class="sidebar-icon-container group" title="Noise Profiler">
+            <div class="sidebar-icon-box border-yellow-500/30">
+                <svg class="w-5 h-5 text-yellow-400 group-hover:text-yellow-200" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Noise</span>
+        </div>
+
+        <!-- Bio-Luminescent Shield -->
+        <div id="bioShieldBtn" onclick="toggleBioMode()" class="sidebar-icon-container group"
+            title="Bio-Luminescent Shield">
+            <div class="sidebar-icon-box border-emerald-500/30">
+                <svg class="w-5 h-5 text-emerald-400 group-hover:text-emerald-200" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 007.92 12.446A9 9 0 1112 2.992z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 16s.5-2 3-2 3 2 3 2">
+                    </path>
+                    <circle cx="12" cy="10" r="1" fill="currentColor"></circle>
+                </svg>
+            </div>
+            <span class="sidebar-label">BioShield</span>
+        </div>
+
+        <!-- Custom Features -->
+        <div onclick="document.getElementById('pluginManagerModal').classList.remove('hidden')"
+            class="sidebar-icon-container group" title="Custom Features">
+            <div class="sidebar-icon-box border-purple-500/30">
+                <svg class="w-5 h-5 text-purple-400 group-hover:text-purple-200" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z">
+                    </path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Plugins</span>
+        </div>
+
+        <!-- Visual Env Toggle -->
+        <!-- Visual Env Toggle & Modes -->
+        <!-- Nexus Visualization Menu Removed -->
+
+        <!-- Custom Hardware Menu (New Injection Point) -->
+        <!-- Logic will inject this into header, but for now sidebar is for tools -->
+
+        <!-- Settings (Bottom) -->
+
+        <div id="navSettingsBtn" class="mt-auto sidebar-icon-container group">
+            <div class="sidebar-icon-box">
+                <svg class="w-5 h-5 text-gray-400 group-hover:text-cyan-300" fill="none" stroke="currentColor"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                    </path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+            </div>
+            <span class="sidebar-label">Settings</span>
+        </div>
+
+        <!-- Architect Button Removed -->
+
+    </aside>
+    <!-- Canvas Area -->
+    <main class="area-main relative bg-slate-950 overflow-hidden flex flex-row items-stretch justify-start p-0 gap-0"
+        id="circuit-canvas-container">
+
+        <!-- Left Controls Column (Utility Drawer) -->
+        <div id="utilityDrawer"
+            class="utility-drawer flex flex-col z-20 h-full border-r border-gray-800 bg-slate-900/95 backdrop-blur-xl shadow-xl">
+
+            <!-- Combined Control Station (Palette + Save/Load) -->
+            <div class="flex flex-col flex-1 overflow-y-auto custom-scrollbar relative">
+
+                <!-- Header / Project Controls (Sticky Top) -->
+                <div class="sticky top-0 bg-slate-900/95 z-10 p-3 border-b border-gray-800 space-y-2">
+
+                    <!-- Top Row: Save/Load + Utilities -->
+                    <div class="flex gap-2">
+                        <button onclick="saveProject()" title="Save Project"
+                            class="flex-1 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold text-gray-300 font-mono py-1.5 rounded border border-gray-700 hover:border-cyan-500 hover:text-cyan-400 transition flex items-center justify-center gap-1 group">
+                            <svg class="w-3.5 h-3.5 text-gray-400 group-hover:text-cyan-400 transition" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                                </path>
+                            </svg>
+                            SAVE
+                        </button>
+                        <button onclick="loadProject()" title="Load Project"
+                            class="flex-1 bg-gray-800 hover:bg-gray-700 text-[10px] font-bold text-gray-300 font-mono py-1.5 rounded border border-gray-700 hover:border-cyan-500 hover:text-cyan-400 transition flex items-center justify-center gap-1 group">
+                            <svg class="w-3.5 h-3.5 text-gray-400 group-hover:text-cyan-400 transition" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                            </svg>
+                            LOAD
+                        </button>
+                        <!-- Undo Button moved here for quick access -->
+                        <button id="undoBtn"
+                            class="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-2 rounded border border-gray-700 transition"
+                            title="Undo">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Execution Row -->
+                    <div class="flex gap-2">
+                        <button id="simulateBtn"
+                            class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded py-2 flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/20 transition group border border-cyan-500/50">
+                            <svg class="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
+                                </path>
+                            </svg>
+                            <span class="text-[10px] font-bold tracking-widest uppercase">Run Circuit</span>
+                        </button>
+                        <button id="resetBtn"
+                            class="px-3 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/50 rounded flex items-center justify-center transition"
+                            title="Clear All">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-2.195-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                </path>
+                            </svg>
+                        </button>
+                        <!-- Redo Button (moved here from bottom utilities) -->
+                        <button id="redoBtn"
+                            class="px-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border border-gray-700 rounded flex items-center justify-center transition"
+                            title="Redo">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Scrollable Content -->
+                <div class="p-4 flex flex-col gap-4">
+
+                    <!-- Gate Categories -->
+                    <div class="space-y-4">
+                        <!-- Essentials -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Logic Gates
+                            </h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="gate-item bg-blue-600/20 border border-blue-500/30 hover:bg-blue-600/40 text-blue-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(37,99,235,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="H">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">H</span>
+                                </div>
+                                <div class="gate-item bg-purple-600/20 border border-purple-500/30 hover:bg-purple-600/40 text-purple-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(147,51,234,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="X">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">X</span>
+                                </div>
+                                <div class="gate-item bg-green-600/20 border border-green-500/30 hover:bg-green-600/40 text-green-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(22,163,74,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="Y">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">Y</span>
+                                </div>
+                                <div class="gate-item bg-pink-600/20 border border-pink-500/30 hover:bg-pink-600/40 text-pink-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(219,39,119,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="Z">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">Z</span>
+                                </div>
+                                <div class="gate-item bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/40 text-indigo-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(79,70,229,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="T">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">T</span>
+                                </div>
+                                <div class="gate-item bg-orange-600/20 border border-orange-500/30 hover:bg-orange-600/40 text-orange-300 p-2 rounded cursor-grab flex flex-col items-center justify-center shadow-[0_0_10px_rgba(234,88,12,0.1)] transition group hover:scale-105"
+                                    draggable="true" data-type="CNOT">
+                                    <span class="font-mono font-bold text-sm group-hover:text-white transition">●</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parametric -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Parametric
+                            </h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="gate-item bg-teal-600/20 border border-teal-500/30 hover:bg-teal-600/40 text-teal-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="RX">
+                                    <span class="font-mono font-bold text-[10px]">Rx</span>
+                                </div>
+                                <div class="gate-item bg-teal-600/20 border border-teal-500/30 hover:bg-teal-600/40 text-teal-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="RY">
+                                    <span class="font-mono font-bold text-[10px]">Ry</span>
+                                </div>
+                                <div class="gate-item bg-teal-600/20 border border-teal-500/30 hover:bg-teal-600/40 text-teal-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="RZ">
+                                    <span class="font-mono font-bold text-[10px]">Rz</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Phase Gates (NEW) -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Phase Gates
+                            </h3>
+                            <div class="grid grid-cols-4 gap-2">
+                                <div class="gate-item bg-violet-600/20 border border-violet-500/30 hover:bg-violet-600/40 text-violet-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="S">
+                                    <span class="font-mono font-bold text-[10px]">S</span>
+                                </div>
+                                <div class="gate-item bg-violet-600/20 border border-violet-500/30 hover:bg-violet-600/40 text-violet-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="Sdg">
+                                    <span class="font-mono font-bold text-[10px]">S†</span>
+                                </div>
+                                <div class="gate-item bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/40 text-indigo-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="Tdg">
+                                    <span class="font-mono font-bold text-[10px]">T†</span>
+                                </div>
+                                <div class="gate-item bg-purple-600/20 border border-purple-500/30 hover:bg-purple-600/40 text-purple-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="P">
+                                    <span class="font-mono font-bold text-[10px]">P(θ)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Controlled Gates (NEW) -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Controlled
+                            </h3>
+                            <div class="grid grid-cols-4 gap-2">
+                                <div class="gate-item bg-yellow-600/20 border border-yellow-500/30 hover:bg-yellow-600/40 text-yellow-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="CZ">
+                                    <span class="font-mono font-bold text-[10px]">CZ</span>
+                                </div>
+                                <div class="gate-item bg-lime-600/20 border border-lime-500/30 hover:bg-lime-600/40 text-lime-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="CY">
+                                    <span class="font-mono font-bold text-[10px]">CY</span>
+                                </div>
+                                <div class="gate-item bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600/40 text-amber-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="CP">
+                                    <span class="font-mono font-bold text-[10px]">CP</span>
+                                </div>
+                                <div class="gate-item bg-orange-500/20 border border-orange-400/30 hover:bg-orange-500/40 text-orange-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="SWAP">
+                                    <span class="font-mono font-bold text-[10px]">SWAP</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- State Blocks (NEW) -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">State Blocks
+                            </h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="gate-item bg-gray-600/20 border border-gray-500/30 hover:bg-gray-600/40 text-gray-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="RESET">
+                                    <span class="font-mono font-bold text-[10px]">|0⟩</span>
+                                </div>
+                                <div class="gate-item bg-slate-600/20 border border-slate-500/30 hover:bg-slate-600/40 text-slate-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="MEASURE">
+                                    <span class="font-mono font-bold text-[10px]">M</span>
+                                </div>
+                                <div class="gate-item bg-stone-600/20 border border-stone-500/30 hover:bg-stone-600/40 text-stone-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105"
+                                    draggable="true" data-type="BARRIER">
+                                    <span
+                                        class="font-mono font-bold text-[10px] border-l border-dashed border-stone-400 h-4 w-0"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Macro Blocks (NEW) -->
+                        <div>
+                            <h3 class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Macros</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="gate-item bg-sky-600/20 border border-sky-500/30 hover:bg-sky-600/40 text-sky-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105 relative"
+                                    draggable="true" data-type="QFT">
+                                    <span class="font-mono font-bold text-[10px]">QFT</span>
+                                    <span
+                                        class="absolute -top-1 -right-1 bg-sky-500 text-[7px] px-1 rounded text-white">N</span>
+                                </div>
+                                <div class="gate-item bg-cyan-600/20 border border-cyan-500/30 hover:bg-cyan-600/40 text-cyan-300 p-2 rounded cursor-grab flex flex-col items-center justify-center transition hover:scale-105 relative"
+                                    draggable="true" data-type="IQFT">
+                                    <span class="font-mono font-bold text-[10px]">QFT†</span>
+                                    <span
+                                        class="absolute -top-1 -right-1 bg-cyan-500 text-[7px] px-1 rounded text-white">N</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parameter Control -->
+                        <div class="bg-black/30 p-2 rounded border border-gray-700">
+                            <label class="text-[9px] text-gray-500 font-bold uppercase block mb-1">Rotation (θ)</label>
+                            <div class="flex items-center gap-2">
+                                <input type="range" id="paramSlider" min="0" max="6.28" step="0.1" value="3.14"
+                                    class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                <input type="number" id="paramInput" value="3.14" step="0.1"
+                                    class="w-10 bg-transparent text-[10px] text-cyan-400 font-mono text-center outline-none border-b border-gray-700 focus:border-cyan-500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Extra Tools -->
+                    <div class="mt-auto pt-4 border-t border-gray-700/50 space-y-3">
+                        <!-- Noise Simulator -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-[9px] text-gray-500 font-bold uppercase">Noise Env</label>
+                                <span id="noiseValue" class="text-[9px] text-red-400 font-mono">0%</span>
+                            </div>
+                            <input type="range" id="noiseSlider" min="0" max="50" value="0"
+                                class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Generator, Code, and Scan removed — functionality via Sentinel Architect chat -->
+                        <button id="exportBtn" class="hidden">Code</button>
+                        <button id="scanBtn" class="hidden">Scan</button>
+                        <input type="text" id="diffusionPrompt" class="hidden">
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Wrapper (Right Column) -->
+        <div class="area-main flex-1 h-full relative flex flex-col items-center justify-center p-4">
+            <!-- Top-Right Toolbar (Z-Axis & Ghost) -->
+            <div class="absolute top-0 right-4 flex gap-2 z-20">
+                <!-- Z-Axis Toggle Removed -->
+
+                <!-- Advanced Menu Removed -->
+
+                <div
+                    class="bg-gray-900/80 text-[10px] text-purple-400 px-2 py-1 rounded border border-purple-500/30 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse"></span>GHOST: ENABLED
+                </div>
+            </div>
+
+            <!-- Canvas -->
+            <canvas id="circuitCanvas" width="800" height="600"
+                class="shadow-2xl border border-gray-800/50 rounded-lg bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/50 to-slate-950/80"></canvas>
+
+            <!-- System Metrics HUD Removed -->
+        </div>
+
+    </main>
+
+    <!-- Right Panel: Hardware & ML Insights -->
+    <aside class="area-right glass-panel border-l border-gray-700/50 flex flex-col z-10 overflow-hidden relative">
+        <!-- Panel Header -->
+        <!-- Sentinel Hub Container -->
+        <div class="flex-1 flex flex-col overflow-hidden relative bg-slate-900/50">
+            <!-- SENTINEL ANALYSIS HUB -->
+            <div id="sentinelAnalysisHub" class="flex flex-1 flex-col overflow-hidden relative">
+                <!-- Header -->
+                <div
+                    class="px-3 py-2 border-b border-gray-700/50 bg-gray-800/30 flex justify-between items-center shrink-0">
+                    <h3
+                        class="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase tracking-widest flex items-center gap-2">
+                        <svg class="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z">
+                            </path>
+                        </svg>
+                        Sentinel Analysis
+                    </h3>
+                    <div class="flex gap-1 items-center">
+                        <span class="text-[9px] text-gray-600 font-mono">LIVE CONNECT</span>
+                        <div id="sentinelStatusDot" class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                    </div>
+                </div>
+
+                <!-- Main Content: Scrollable Analysis & Visuals -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4" id="sentinelHubContent">
+
+                    <!-- Placeholder State -->
+                    <div id="sentinelHubPlaceholder"
+                        class="flex flex-col items-center justify-center h-full text-gray-600 space-y-2 opacity-50">
+                        <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>
+                        <span class="text-[10px] uppercase tracking-wide">Awaiting Circuit Data...</span>
+                    </div>
+
+                    <!-- Analysis Text Container (Hidden initially) -->
+                    <div id="sentinelAnalysisText"
+                        class="text-xs text-gray-300 font-mono leading-relaxed hidden markdown-body"></div>
+
+                    <!-- AI Generated Visualization Container (Hidden initially) -->
+                    <div id="sentinelVisualContainer"
+                        class="hidden rounded-lg border border-purple-500/30 overflow-hidden bg-black/30 mt-2">
+                        <div class="px-2 py-1 bg-purple-900/20 border-b border-purple-500/20 flex items-center gap-2">
+                            <svg class="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            <span class="text-[9px] font-bold text-purple-300 uppercase tracking-wider">AI Generated
+                                Visualization</span>
+                        </div>
+                        <img id="sentinelGeneratedImage" class="w-full" alt="AI Generated Quantum Visualization" />
+                    </div>
+
+
+                </div>
+
+                <!-- Report Preview Container (moved OUTSIDE Sentinel Hub content) -->
+                <div id="reportPreviewContainer"
+                    class="hidden shrink-0 border-t border-gray-700 overflow-hidden bg-white/5 relative group flex flex-col">
+                    <div
+                        class="px-2 py-1 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center shrink-0">
+                        <div
+                            class="text-[9px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                </path>
+                            </svg>
+                            Research Report.pdf
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                onclick="const f=document.getElementById('reportPreviewFrame'); if(f.src) window.open(f.src, '_blank')"
+                                class="text-gray-400 hover:text-cyan-400" title="Open in New Tab">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14">
+                                    </path>
+                                </svg>
+                            </button>
+                            <button onclick="document.getElementById('reportPreviewContainer').classList.add('hidden')"
+                                class="text-gray-400 hover:text-white" title="Close">&times;</button>
+                        </div>
+                    </div>
+                    <iframe id="reportPreviewFrame" class="w-full h-48 bg-gray-900/50" title="Quantum Report"></iframe>
+                </div>
+
+                <!-- Footer: Compact System Log (secondary - analysis goes above) -->
+                <div class="h-24 shrink-0 border-t border-gray-700/50 bg-black/40 flex flex-col">
+                    <div
+                        class="px-2 py-0.5 bg-gray-900/50 text-[8px] font-bold text-gray-600 uppercase flex justify-between items-center">
+                        <span>System Events</span>
+                        <button onclick="document.getElementById('deviceLog').innerHTML=''"
+                            class="hover:text-red-400 transition text-[10px]" title="Clear Log">&times;</button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-1.5 font-mono text-[8px] space-y-0.5 custom-scrollbar"
+                        id="deviceLog">
+                        <div class="flex gap-2"><span class="text-cyan-600">[SYS]</span> <span class="text-gray-500">Hub
+                                Online.</span></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </aside>
+
+    <!-- Phase 4: CHRONICLE - Timeline UI -->
+    <!-- Chronicle Timeline Removed -->
+    <!-- Bottom Dock: System Health & Command Center -->
+    <!-- Bottom Dock Removed -->
+    <!-- Webcam Modal -->
+    <div id="webcamModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-2xl flex flex-col gap-4 w-[640px]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>Scan Handwritten Circuit </h3>
+            <div class="relative bg-black rounded-lg overflow-hidden aspect-video">
+                <video id="webcamVideo" class="w-full h-full object-cover" autoplay playsinline></video>
+                <div class="absolute inset-0 border-2 border-blue-500/50 pointer-events-none rounded-lg">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3"><button id="closeWebcamBtn"
+                    class="px-4 py-2 text-gray-400 hover:text-white transition">Cancel</button><button id="captureBtn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition">Capture
+                    & Analyze </button></div>
+        </div>
+    </div>
+    <!-- Scan Selection Modal -->
+    <div id="scanSelectionModal"
+        class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center backdrop-blur-sm">
+        <div
+            class="bg-gray-800 p-8 rounded-xl border border-gray-700 shadow-2xl flex flex-col gap-6 w-96 transform scale-100 transition-all">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-400" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>Choose Input Method
+                </h3><button onclick="closeScanSelection()"
+                    class="text-gray-400 hover:text-white transition text-2xl">&times;
+                </button>
+            </div>
+            <p class="text-gray-400 text-sm">Scan a handwritten circuit
+                diagram.</p>
+            <div class="space-y-3"><button onclick="selectWebcam()"
+                    class="w-full bg-gray-700 hover:bg-gray-600 border border-gray-600 p-4 rounded-lg flex items-center gap-4 transition group">
+                    <div class="p-3 bg-blue-600/20 rounded-full group-hover:bg-blue-600/30 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-400" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </div>
+                    <div class="text-left"><span class="block font-bold text-gray-200">Use
+                            Webcam</span><span class="text-xs text-gray-500">Capture
+                            directly from camera</span></div>
+                </button><button onclick="selectFileImport()"
+                    class="w-full bg-gray-700 hover:bg-gray-600 border border-gray-600 p-4 rounded-lg flex items-center gap-4 transition group">
+                    <div class="p-3 bg-purple-600/20 rounded-full group-hover:bg-purple-600/30 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-400" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                    </div>
+                    <div class="text-left"><span class="block font-bold text-gray-200">Import
+                            File</span><span class="text-xs text-gray-500">Upload JPG or
+                            PNG</span></div>
+                </button></div><input type="file" id="fileInput" accept="image/*" class="hidden">
+        </div>
+    </div>
+    <!-- API Key Modal -->
+    <div id="apiModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
+        <div
+            class="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-2xl flex flex-col gap-4 w-96 transform scale-100 transition-all">
+            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>Enter API Key
+            </h3>
+            <p class="text-xs text-gray-400">Your key is stored in
+                memory only.</p>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs text-gray-500 font-bold uppercase">Model Version</label>
+                <select id="modalModelSelect"
+                    class="bg-gray-900 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 outline-none">
+                    <option value="gemini-3-flash-preview">Gemini 3 Flash Preview (Fast)</option>
+                    <option value="gemini-3-pro-preview">Gemini 3 Pro Preview (Advanced)</option>
+                </select>
+            </div>
+
+            <input type="password" id="modalApiKeyInput" placeholder="Paste Gemini API Key here..."
+                class="bg-gray-900 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 outline-none placeholder-gray-500">
+            <div class="flex justify-end gap-2"><button
+                    onclick="document.getElementById('apiModal').classList.add('hidden')"
+                    class="px-4 py-2 text-gray-400 hover:text-white transition text-xs font-bold">Cancel</button><button
+                    onclick="saveApiKey()"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-xs transition shadow-lg shadow-blue-900/50">Save
+                    Key </button></div>
+        </div>
+    </div>
+    <!-- Hidden Canvas for capture --><canvas id="captureCanvas" class="hidden"></canvas>
+    <!-- Logic Script -->
+    <!-- PDF Report Modal -->
+    <!-- Duplicate PDF Modal Removed -->
+
+    <!-- UNIFIED Plugin Manager Modal - Sleek Professional Design -->
+    <div id="pluginManagerModal"
+        class="fixed inset-0 bg-black/70 hidden items-center justify-center z-[60] backdrop-blur-md">
+        <div
+            class="bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950 border border-white/10 rounded-2xl shadow-2xl w-[750px] h-[620px] flex flex-col overflow-hidden relative">
+
+            <!-- Decorative gradient glow -->
+            <div
+                class="absolute -top-20 -right-20 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl pointer-events-none">
+            </div>
+            <div
+                class="absolute -bottom-20 -left-20 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none">
+            </div>
+
+            <!-- Header -->
+            <div
+                class="relative z-10 px-6 py-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                <div class="flex items-center gap-5">
+                    <div class="flex items-center gap-3">
+                        <div
+                            class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                            <span class="text-lg">🧩</span>
+                        </div>
+                        <div>
+                            <h3 class="text-white font-bold text-lg tracking-tight">Plugin Forge</h3>
+                            <p class="text-[10px] text-gray-500 font-medium">Extend • Create • Evolve</p>
+                        </div>
+                    </div>
+                    <!-- Tabs -->
+                    <div class="flex bg-black/30 rounded-xl p-1 border border-white/5 ml-4">
+                        <button onclick="switchPluginTab('installed')" id="tab-installed"
+                            class="px-4 py-1.5 text-xs font-semibold rounded-lg text-white bg-white/10 transition-all duration-200 shadow-inner">Installed</button>
+                        <!-- Marketplace Removed -->
+                    </div>
+                </div>
+                <button onclick="document.getElementById('pluginManagerModal').classList.add('hidden')"
+                    class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 relative overflow-hidden">
+                <!-- Tab: Installed -->
+                <div id="view-installed" class="absolute inset-0 flex flex-col p-5 overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Extensions</h4>
+                    </div>
+                    <ul id="custom-features-list" class="space-y-2 flex-1">
+                        <!-- FeatureLoader injects here -->
+                    </ul>
+                    <div
+                        class="mt-6 p-4 rounded-xl bg-gradient-to-r from-purple-900/20 to-cyan-900/20 border border-white/5">
+                        <p class="text-xs text-gray-400 flex items-center gap-2">
+                            <span class="text-purple-400">💡</span>
+                            Ask Sentinel to <span class="text-purple-300 font-semibold">"create a plugin"</span> to
+                            generate custom tools with AI
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Tab: Marketplace -->
+                <div id="view-marketplace" class="hidden absolute inset-0 flex flex-col">
+                    <div class="p-4 bg-black/20 border-b border-white/5 flex gap-3">
+                        <div class="flex-1 relative">
+                            <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input type="text" placeholder="Search extensions..."
+                                class="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-purple-500/50 focus:bg-white/[0.08] outline-none transition-all">
+                        </div>
+                        <select
+                            class="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-300 outline-none hover:border-white/20 transition-all cursor-pointer">
+                            <option>All Categories</option>
+                            <option>Visualization</option>
+                            <option>Analysis</option>
+                            <option>Export</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 p-5 overflow-y-auto custom-scrollbar">
+                        <div class="grid grid-cols-2 gap-4" id="marketplace-grid">
+                            <!-- Premium Marketplace Card -->
+                            <div
+                                class="group bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-purple-500/30 rounded-xl p-4 transition-all duration-300 cursor-pointer">
+                                <div class="flex items-start gap-3 mb-3">
+                                    <div
+                                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-xl shadow-lg shadow-purple-500/20">
+                                        🎱</div>
+                                    <div class="flex-1">
+                                        <div
+                                            class="text-sm font-semibold text-gray-100 group-hover:text-purple-300 transition-colors">
+                                            Bloch Sphere V2</div>
+                                        <div class="text-[10px] text-purple-400/80 font-medium">Visualization</div>
+                                    </div>
+                                    <div
+                                        class="text-[10px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full font-medium">
+                                        Free</div>
+                                </div>
+                                <p class="text-[11px] text-gray-400 mb-4 leading-relaxed">Enhanced interactive Bloch
+                                    sphere with real-time state tracking.</p>
+                                <button
+                                    class="w-full py-2 text-xs bg-white/5 hover:bg-purple-600 text-gray-300 hover:text-white rounded-lg border border-white/10 hover:border-purple-500 transition-all duration-200 font-semibold">Install</button>
+                            </div>
+                            <div
+                                class="group bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-cyan-500/30 rounded-xl p-4 transition-all duration-300 cursor-pointer">
+                                <div class="flex items-start gap-3 mb-3">
+                                    <div
+                                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-600 to-blue-600 flex items-center justify-center text-xl shadow-lg shadow-cyan-500/20">
+                                        📊</div>
+                                    <div class="flex-1">
+                                        <div
+                                            class="text-sm font-semibold text-gray-100 group-hover:text-cyan-300 transition-colors">
+                                            Circuit Analytics</div>
+                                        <div class="text-[10px] text-cyan-400/80 font-medium">Analysis</div>
+                                    </div>
+                                    <div
+                                        class="text-[10px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full font-medium">
+                                        Free</div>
+                                </div>
+                                <p class="text-[11px] text-gray-400 mb-4 leading-relaxed">Deep circuit analysis with
+                                    gate counts and optimization tips.</p>
+                                <button
+                                    class="w-full py-2 text-xs bg-white/5 hover:bg-cyan-600 text-gray-300 hover:text-white rounded-lg border border-white/10 hover:border-cyan-500 transition-all duration-200 font-semibold">Install</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="relative z-10 px-6 py-3 bg-black/30 border-t border-white/5 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-[10px] text-gray-500 font-medium">FORGE v2.1 • Hot Reload Active</span>
+                </div>
+                <span class="text-[10px] text-gray-600">Powered by Sentinel-3</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Command Palette (Ctrl+K) -->
+    <div id="commandPalette"
+        class="fixed inset-0 bg-black/60 hidden z-[100] flex items-start justify-center pt-[15vh] backdrop-blur-sm transition-opacity">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-[600px] overflow-hidden flex flex-col transform transition-all scale-95 opacity-0"
+            id="commandPalettePanel">
+            <div class="p-4 border-b border-gray-800 flex items-center gap-3">
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <input type="text" id="commandInput" placeholder="Type a command..."
+                    class="bg-transparent border-none outline-none text-white w-full text-lg placeholder-gray-600"
+                    autocomplete="off">
+                <span class="text-xs text-gray-600 border border-gray-800 rounded px-2 py-0.5">ESC</span>
+            </div>
+            <div class="max-h-[400px] overflow-y-auto p-2" id="commandList">
+                <!-- Commands injected via JS -->
+            </div>
+            <div
+                class="p-2 border-t border-gray-800 bg-gray-900/50 text-[10px] text-gray-500 flex justify-between px-4">
+                <span>Select <kbd class="font-sans bg-gray-800 px-1 rounded">↑↓</kbd></span>
+                <span>Execute <kbd class="font-sans bg-gray-800 px-1 rounded">↵</kbd></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Center (Slide-over) -->
+    <div id="notificationCenter"
+        class="fixed inset-y-0 right-0 w-80 bg-gray-900/95 backdrop-blur-xl border-l border-gray-800 transform translate-x-full transition-transform duration-300 z-[90] flex flex-col shadow-2xl">
+        <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900">
+            <h3 class="font-bold text-gray-200 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                System Logs
+            </h3>
+            <button onclick="toggleNotificationCenter()" class="text-gray-500 hover:text-white">&times;</button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-3" id="notificationHistory">
+            <!-- Logs -->
+            <div class="text-center text-gray-600 text-sm mt-10">No recent events</div>
+        </div>
+        <div class="p-3 border-t border-gray-800 text-center">
+            <button onclick="clearNotifications()" class="text-xs text-red-400 hover:text-red-300">Clear
+                Logs</button>
+        </div>
+    </div>
+
+    <!-- Quick Stats Overlay -->
+    <div id="quickStats"
+        class="absolute bottom-6 left-6 z-20 pointer-events-none transition-opacity duration-500 opacity-0 bg-gray-900/80 backdrop-blur border border-white/10 rounded-lg p-3 text-xs font-mono text-gray-300 shadow-xl flex gap-4">
+        <div class="flex flex-col">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wider">Gates</span>
+            <span class="text-white font-bold text-lg leading-none" id="qs-gateCount">0</span>
+        </div>
+        <div class="w-px bg-white/10"></div>
+        <div class="flex flex-col">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wider">Depth</span>
+            <span class="text-white font-bold text-lg leading-none" id="qs-depth">0</span>
+        </div>
+        <div class="w-px bg-white/10"></div>
+        <div class="flex flex-col">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wider">Est. T1</span>
+            <span class="text-green-400 font-bold text-lg leading-none" id="qs-fidelity">100%</span>
+        </div>
+    </div>
+
+    <!-- API Configuration (Hidden) -->
+    <input type="hidden" id="apiKey" value="">
+    <div id="apiModal"
+        class="hidden fixed inset-0 bg-black/80 z-[110] flex items-center justify-center backdrop-blur-md">
+        <div
+            class="bg-gray-900 border border-cyan-500/30 rounded-2xl p-8 w-[400px] shadow-2xl relative overflow-hidden">
+            <div
+                class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50">
+            </div>
+            <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                <span class="text-2xl">🔑</span> Sentinel Access
+            </h3>
+            <p class="text-gray-400 text-xs mb-6 leading-relaxed">Enter your Gemini API Key to enable Sentinel
+                Architect's self-evolving core.</p>
+
+            <div class="relative mb-6">
+                <input type="password" id="modalApiKeyInput" placeholder="sk-..."
+                    class="w-full bg-black/50 border border-white/10 rounded-xl p-3 pl-4 text-white placeholder-gray-600 focus:border-cyan-500/50 focus:outline-none transition-colors">
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('apiModal').classList.add('hidden')"
+                    class="flex-1 py-3 text-xs font-semibold text-gray-500 hover:text-white transition-colors">Cancel</button>
+                <button onclick="saveApiKey()"
+                    class="flex-1 py-3 text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-lg shadow-cyan-500/20 transition-all hover:scale-[1.02]">
+                    Activate Core
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => {
+                        console.log('%c[PWA] Service Worker registered successfully', 'color: #22d3ee; font-weight: bold;', reg.scope);
+
+                        // Check for updates
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated') {
+                                    if (window.showToast) {
+                                        window.showToast('QuantaVibe updated! Refresh for latest version.', 'info');
+                                    }
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => {
+                        console.warn('%c[PWA] Service Worker registration failed:', 'color: #ef4444;', err);
+                    });
+            });
+
+            // Handle PWA install prompt
+            let deferredPrompt;
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                console.log('%c[PWA] Install prompt available', 'color: #22d3ee; font-weight: bold;');
+
+                // Show install button/toast if desired
+                if (window.showToast) {
+                    window.showToast('QuantaVibe can be installed as an app!', 'info');
+                }
+
+                // Store globally so it can be triggered from UI
+                window.quantaVibePWA = {
+                    install: async () => {
+                        if (deferredPrompt) {
+                            deferredPrompt.prompt();
+                            const { outcome } = await deferredPrompt.userChoice;
+                            console.log(`[PWA] Install ${outcome}`);
+                            deferredPrompt = null;
+                        }
+                    }
+                };
+            });
+
+            window.addEventListener('appinstalled', () => {
+                console.log('%c[PWA] QuantaVibe installed successfully!', 'color: #22d3ee; font-weight: bold;');
+                deferredPrompt = null;
+            });
+        }
+    </script>
+    <div id="feature-sandbox" class="hidden"></div>
+    <!-- FeatureLoader already loaded in <head>, no duplicate needed -->
+    <script src="features/gate_cost_calculator.js"></script>
+    <script>
+        // INLINE TEST
+        console.log("%c HTML LOADED FRESH - TIMESTAMP: 2026-02-08_BUDGETEER_FIX", "background: red; color: white; font-size: 20px;");
+
+        // Chat Message Handler with Markdown & Image Support
+        window.addChatMessage = function (role, text, container) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = role === 'user'
+                ? "bg-purple-900/40 border border-purple-500/30 p-2 rounded-lg text-xs text-white max-w-[90%] self-end"
+                : "bg-gray-800/80 border border-gray-700 p-3 rounded-lg text-xs text-gray-300 w-full markdown-body";
+
+            if (role === 'agent' && typeof marked !== 'undefined') {
+                // Parse Markdown
+                let html = marked.parse(text);
+
+                // Handle [IMAGE] tags - simulate generation or render placeholder
+                html = html.replace(/\[IMAGE\](.*?)\[\/IMAGE\]/g, (match, prompt) => {
+                    return `<div class="my-2 p-2 bg-black/50 rounded border border-gray-700">
+                        <div class="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">AI Visualization</div>
+                        <img src="https://image.pollinations.ai/prompt/${encodeURIComponent(prompt + ' quantum physics circuit scheme scientific diagram high resolution')}" 
+                             alt="${prompt}" class="w-full rounded border border-gray-600/50 hover:opacity-90 transition shadow-lg"/>
+                    </div>`;
+                });
+
+                msgDiv.innerHTML = html;
+            } else {
+                msgDiv.innerText = text;
+            }
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log("%c DOM READY", "background: green; color: white; font-size: 16px;");
+        });
+    </script>
+    <script src="app.js?v=VISUAL_COMPLETE_2"></script>
+</body>
+
+</html>
